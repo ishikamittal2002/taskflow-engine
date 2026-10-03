@@ -6,6 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "migrate": "tsx src/db/migrate.ts",
+    "worker": "tsx watch src/queue/worker.ts",
     "dev": "tsx watch src/server.ts"
   },
   "repository": {
