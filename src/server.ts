@@ -24,7 +24,7 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'name and task_type are required fields' });
     }
 
-    // 1. Persist the job record in PostgreSQL
+    // Persist top-level record to PostgreSQL
     const dbResult = await query(
       `INSERT INTO jobs (name, task_type, payload, status)
        VALUES ($1, $2, $3, 'ACTIVE')
@@ -34,14 +34,13 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
 
     const savedJob = dbResult.rows[0];
 
-    // 2. Enqueue the task into BullMQ / Redis
+    // Push into BullMQ Redis Queue
     const queueJob = await taskQueue.add(name, {
       jobDbId: savedJob.id,
       taskType: task_type,
       payload: payload || {},
     });
 
-    // 3. Respond immediately (Asynchronous Pattern: < 20ms)
     return res.status(202).json({
       message: 'Job submitted and queued successfully',
       jobId: savedJob.id,
@@ -50,6 +49,53 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error('Error dispatching job:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Endpoint: Fetch Job Status & Complete Audit History
+app.get('/api/jobs/:id', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    const jobResult = await query(`SELECT * FROM jobs WHERE id = $1`, [id]);
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const runsResult = await query(
+      `SELECT * FROM job_runs WHERE job_id = $1 ORDER BY attempt ASC`,
+      [id]
+    );
+
+    return res.status(200).json({
+      job: jobResult.rows[0],
+      runs: runsResult.rows,
+    });
+  } catch (error) {
+    console.error('Error fetching job details:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// Endpoint: Real-time Queue Metrics
+app.get('/api/metrics', async (_req: Request, res: Response) => {
+  try {
+    const counts = await taskQueue.getJobCounts(
+      'waiting',
+      'active',
+      'completed',
+      'failed',
+      'delayed'
+    );
+
+    return res.status(200).json({
+      queue: 'taskflow-queue',
+      timestamp: new Date().toISOString(),
+      counts,
+    });
+  } catch (error) {
+    console.error('Error fetching queue metrics:', error);
     return res.status(500).json({ error: 'Internal Server Error' });
   }
 });
