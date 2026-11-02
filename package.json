@@ -22,6 +22,8 @@
   },
   "homepage": "https://github.com/ishikamittal2002/taskflow-engine#readme",
   "dependencies": {
+    "@bull-board/api": "^9.11.0",
+    "@bull-board/express": "^9.11.0",
     "bullmq": "^6.3.4",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",

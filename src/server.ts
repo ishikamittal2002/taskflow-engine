@@ -1,5 +1,9 @@
 import express, { Request, Response } from 'express';
 import dotenv from 'dotenv';
+import { createBullBoard } from '@bull-board/api';
+import { BullMQAdapter } from '@bull-board/api/bullMQAdapter';
+import { ExpressAdapter } from '@bull-board/express';
+
 import { taskQueue } from './queue/taskQueue';
 import { query } from './db/db';
 
@@ -9,6 +13,24 @@ const app = express();
 const PORT = process.env.PORT || 4000;
 
 app.use(express.json());
+
+// ---------------------------------------------------------------------
+// Bull-Board UI Setup
+// ---------------------------------------------------------------------
+const serverAdapter = new ExpressAdapter();
+serverAdapter.setBasePath('/admin/queues');
+
+createBullBoard({
+  queues: [new BullMQAdapter(taskQueue)],
+  serverAdapter: serverAdapter,
+});
+
+// Mount the dashboard router
+app.use('/admin/queues', serverAdapter.getRouter());
+
+// ---------------------------------------------------------------------
+// Application Endpoints
+// ---------------------------------------------------------------------
 
 // Health check endpoint
 app.get('/health', (_req: Request, res: Response) => {
@@ -24,7 +46,6 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'name and task_type are required fields' });
     }
 
-    // Persist top-level record to PostgreSQL
     const dbResult = await query(
       `INSERT INTO jobs (name, task_type, payload, status)
        VALUES ($1, $2, $3, 'ACTIVE')
@@ -34,7 +55,6 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
 
     const savedJob = dbResult.rows[0];
 
-    // Push into BullMQ Redis Queue
     const queueJob = await taskQueue.add(name, {
       jobDbId: savedJob.id,
       taskType: task_type,
@@ -102,4 +122,5 @@ app.get('/api/metrics', async (_req: Request, res: Response) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 TaskFlow Producer API running on http://localhost:${PORT}`);
+  console.log(`📊 TaskFlow Queue Dashboard running on http://localhost:${PORT}/admin/queues`);
 });
