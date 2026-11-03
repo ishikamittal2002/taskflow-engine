@@ -14,7 +14,6 @@ export const taskWorker = new Worker(
 
     console.log(`\n▶ [Worker] Processing Job ID: ${job.id} | Attempt #${attempt} | Type: ${taskType}`);
 
-    // Insert an in-progress record into job_runs
     const runRecord = await query(
       `INSERT INTO job_runs (job_id, attempt, status, started_at)
        VALUES ($1, $2, 'PROCESSING', NOW())
@@ -24,11 +23,9 @@ export const taskWorker = new Worker(
     const runId = runRecord.rows[0].id;
 
     try {
-      // Execute the task
       const result = await processTask(taskType, payload);
       const durationMs = Date.now() - startTime;
 
-      // Update job_runs table with success
       await query(
         `UPDATE job_runs 
          SET status = 'COMPLETED', output = $1, finished_at = NOW(), duration_ms = $2
@@ -41,7 +38,6 @@ export const taskWorker = new Worker(
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
 
-      // Update job_runs table with failure
       await query(
         `UPDATE job_runs 
          SET status = 'FAILED', error_message = $1, finished_at = NOW(), duration_ms = $2
@@ -50,12 +46,16 @@ export const taskWorker = new Worker(
       );
 
       console.error(`❌ [Worker] Job ID: ${job.id} Attempt #${attempt} failed: ${error.message}`);
-      throw error; // Re-throw to trigger BullMQ retry / exponential backoff
+      throw error;
     }
   },
   {
     connection: redisConnection,
-    concurrency: 5, // Process up to 5 jobs in parallel
+    concurrency: 2, // Maximum 2 jobs processed concurrently per worker instance
+    limiter: {
+      max: 3,       // Maximum 3 jobs processed...
+      duration: 10000, // ...per 10-second rolling window (10,000 ms)
+    },
   }
 );
 
