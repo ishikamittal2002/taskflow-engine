@@ -73,6 +73,55 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
   }
 });
 
+// Endpoint: Register a Recurring Scheduled Job (Cron)
+app.post('/api/jobs/schedule', async (req: Request, res: Response) => {
+  try {
+    const { name, task_type, cron, payload } = req.body;
+
+    if (!name || !task_type || !cron) {
+      return res.status(400).json({ 
+        error: 'name, task_type, and cron expression are required fields' 
+      });
+    }
+
+    // Persist recurring job definition to PostgreSQL
+    const dbResult = await query(
+      `INSERT INTO jobs (name, task_type, payload, cron_schedule, status)
+       VALUES ($1, $2, $3, $4, 'ACTIVE')
+       RETURNING *`,
+      [name, task_type, JSON.stringify(payload || {}), cron]
+    );
+
+    const savedJob = dbResult.rows[0];
+
+    // Add repeatable job to BullMQ
+    // Add repeatable job to BullMQ
+    const queueJob = await taskQueue.add(
+      name,
+      {
+        jobDbId: savedJob.id,
+        taskType: task_type,
+        payload: payload || {},
+      },
+      {
+        repeat: {
+          pattern: cron, // e.g. "*/20 * * * * *"
+        },
+      } as any
+    );
+
+    return res.status(201).json({
+      message: 'Recurring cron job scheduled successfully',
+      jobId: savedJob.id,
+      cronSchedule: cron,
+      status: 'SCHEDULED',
+    });
+  } catch (error) {
+    console.error('Error scheduling cron job:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 // Endpoint: Fetch Job Status & Complete Audit History
 app.get('/api/jobs/:id', async (req: Request, res: Response) => {
   try {
