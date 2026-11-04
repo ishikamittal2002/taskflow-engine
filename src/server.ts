@@ -169,6 +169,56 @@ app.get('/api/metrics', async (_req: Request, res: Response) => {
   }
 });
 
+// Endpoint: Dead Letter Queue (DLQ) Re-enqueue / Retry Failed Job
+app.post('/api/jobs/:id/retry', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+
+    // 1. Check if job exists in database
+    const jobResult = await query(`SELECT * FROM jobs WHERE id = $1`, [id]);
+    if (jobResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const job = jobResult.rows[0];
+
+    // 2. Reset the job state in PostgreSQL
+    await query(
+      `UPDATE jobs 
+       SET status = 'ACTIVE', updated_at = NOW() 
+       WHERE id = $1`,
+      [id]
+    );
+
+    // 3. Re-inject the job into BullMQ with fresh retry attempts
+    const newQueueJob = await taskQueue.add(
+      job.name,
+      {
+        jobDbId: job.id,
+        taskType: job.task_type,
+        payload: job.payload,
+      },
+      {
+        attempts: job.max_retries || 3,
+        backoff: {
+          type: 'exponential',
+          delay: (job.backoff_factor || 2) * 1000,
+        },
+      }
+    );
+
+    return res.status(200).json({
+      message: 'Failed job successfully recovered from DLQ and re-enqueued',
+      jobId: job.id,
+      newQueueJobId: newQueueJob.id,
+      status: 'QUEUED',
+    });
+  } catch (error) {
+    console.error('Error recovering job from DLQ:', error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 TaskFlow Producer API running on http://localhost:${PORT}`);
   console.log(`📊 TaskFlow Queue Dashboard running on http://localhost:${PORT}/admin/queues`);
