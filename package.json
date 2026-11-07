@@ -4,10 +4,10 @@
   "description": "Distributed Job Scheduler & Async Task Monitor",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "migrate": "tsx src/db/migrate.ts",
-    "worker": "tsx watch src/queue/worker.ts",
-    "dev": "tsx watch src/server.ts"
+  "dev": "tsx watch src/server.ts",
+  "worker": "tsx watch src/queue/worker.ts",
+  "migrate": "tsx src/db/migrate.ts",
+  "test": "vitest run"
   },
   "repository": {
     "type": "git",
@@ -34,9 +34,12 @@
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.2",
     "@types/pg": "^8.23.1",
+    "@types/supertest": "^7.2.1",
     "nodemon": "^3.1.14",
+    "supertest": "^7.3.1",
     "ts-node": "^10.9.2",
     "tsx": "^4.23.13",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
   }
 }
