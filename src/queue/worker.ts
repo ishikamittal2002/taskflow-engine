@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
 import { redisConnection } from '../config/redis';
-import { query } from '../db/db';
+import { query, pool } from '../db/db';
 import { processTask } from './taskHandlers';
 
 console.log('👷 Background Worker process initializing...');
@@ -51,10 +51,10 @@ export const taskWorker = new Worker(
   },
   {
     connection: redisConnection,
-    concurrency: 2, // Maximum 2 jobs processed concurrently per worker instance
+    concurrency: 2,
     limiter: {
-      max: 3,       // Maximum 3 jobs processed...
-      duration: 10000, // ...per 10-second rolling window (10,000 ms)
+      max: 3,
+      duration: 10000,
     },
   }
 );
@@ -64,3 +64,32 @@ taskWorker.on('failed', (job, err) => {
     console.error(`🚨 [Worker] Job ID: ${job.id} permanently failed after max retries.`);
   }
 });
+
+let isWorkerShuttingDown = false;
+
+const shutdownWorker = async (signal: string) => {
+  if (isWorkerShuttingDown) return;
+  isWorkerShuttingDown = true;
+
+  console.log(`\n🛑 Received ${signal}. Shutting down worker process gracefully...`);
+
+  try {
+    await taskWorker.close();
+    console.log('🔒 BullMQ Worker stopped and in-flight tasks finalized.');
+
+    await redisConnection.quit();
+    console.log('🔒 Closed Redis connection.');
+
+    await pool.end();
+    console.log('🔒 Closed PostgreSQL pool.');
+
+    console.log('✅ Worker shutdown completed cleanly.');
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Error shutting down worker:', error);
+    process.exit(1);
+  }
+};
+
+process.on('SIGINT', () => shutdownWorker('SIGINT'));
+process.on('SIGTERM', () => shutdownWorker('SIGTERM'));
