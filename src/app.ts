@@ -40,7 +40,7 @@ app.post('/api/jobs', async (req: Request, res: Response) => {
 
     const dbResult = await query(
       `INSERT INTO jobs (name, task_type, payload, status)
-       VALUES ($1, $2, $3, 'ACTIVE')
+       VALUES ($1, $2, $3, 'WAITING')
        RETURNING *`,
       [name, task_type, JSON.stringify(payload || {})]
     );
@@ -78,7 +78,7 @@ app.post('/api/jobs/schedule', async (req: Request, res: Response) => {
 
     const dbResult = await query(
       `INSERT INTO jobs (name, task_type, payload, cron_schedule, status)
-       VALUES ($1, $2, $3, $4, 'ACTIVE')
+       VALUES ($1, $2, $3, $4, 'SCHEDULED')
        RETURNING *`,
       [name, task_type, JSON.stringify(payload || {}), cron]
     );
@@ -172,7 +172,7 @@ app.post('/api/jobs/:id/retry', async (req: Request, res: Response) => {
 
     await query(
       `UPDATE jobs 
-       SET status = 'ACTIVE', updated_at = NOW() 
+       SET status = 'WAITING', updated_at = NOW() 
        WHERE id = $1`,
       [id]
     );
